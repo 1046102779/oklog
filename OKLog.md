@@ -92,3 +92,74 @@
 * 在一些较大的场景中，I/O可能是最主要的瓶颈，并且ingest工作负载(顺序写)与存储工作负载(半随机读和写)是竞态的。隔离是很聪明的做法。
 
 在复制事务期间，任何失败(或者超时)都会造成事务的中断，并且ingester段将会在后面重新消费。这回造成重复日志记录，但是这是ok的。因为查询时结果通过ULIDs是去重的。最终，我们至少交付了一次。这种复制形式是事务的，但是没有协同。
+
+#### 弹性
+注意到，ingest层实际上是一个分布式的，磁盘存储的日志记录队列。我们能够扩展ingesters来处理我们的写容量。同时我们也能扩展存储层来处理我们的复制因子，设置日志有效期，以及读容量要求。
+
+增加节点到每一层，就像让他们加入集群并开始工作一样简单。有一个优化，ingest节点能够通过gossip协议扩散负载信息，并通过增减来平衡节点负载。存储节点自动地开始消费来自多个ingest节点的段共同平分的份额。只要ingest段size小于存储段size，就可以立即平衡写负载。磁盘利用率在保留时间范围内保持平衡。所有这些都没有明确的成员注册，芈月空间声明或者任何形式的公式。集群的增长或者削减都是无协同的。
+
+#### 合并
+存储节点最终累计不同size和时间范围的段文件。合并是对日志记录的清洗、合并和重新分割的过程，目的是统一数据格式存储和优化查询。
+
+![compaction](https://peter.bourgon.org/ok-log/compaction.png)
+
+合并能够merge段的叠加，如上图所示，合并小的、序列化的段。在每一个阶段，它可以炒作统一的段文件数据格式一步步进化，这就是我们想要的时间边界查询。同时，合并agent能够用于强制保留期。观察数据集保持不变，只有磁盘上的布局优化。合并的影响是透明的，本地的，所以无协同。
+
+#### 查询
+查询字面上是时间边界grep。我们分散查询到所有的查询节点上，然后聚集数据，返回合并后且日志去重的记录给用户。每一个ULIDs日志记录为去重的日志记录提供可排序的身份ID。通过从较少的节点读取，可以提交效率吗？Yes。~~but that would involve prior knowledge about segment location/allocation, which requires some form of coördination. We deliberately make the read path dumb, and pay some costs of inefficiency, to keep it coördination-free~~., (ps: 这段话不明白)
+
+### 原型设计
+#### 实现
+在几个朋友的帮助下，我逐渐详细地描述了系统设计。这给我带来了很大的乐趣。[设计无协同的分布式系统是人生中一个非常大的乐趣](https://twitter.com/peterbourgon/status/803693532988981250)。经过几周时间的努力，我开始说服自己，设计方案是可行的。经过整个假期，我开始了一个设计代码实现。经过一周或者更久，我有了一个看似正确且有用的原型。然后开始花时间进行压力测试。
+
+#### 验证
+现在我将会描述验证的过程，并且通过连续的系统负载测试来分析系统性能。这个测试环境是由[DigitalOcean](https://www.digitalocean.com/)提供的，在此感谢他们！
+
+我创建了8个forwarder节点集合，3个ingester节点和3个存储节点。我开始从一些基本的正确性和crash测试入手，很快就被来自每个组件的垃圾日志所淹没。重现状态时非常困难的，或者从日志垃圾邮件中得出有意义的结论。我最终删除了一大堆日志语句，并添加了很多指标。构建Prometheus表达式和图表是建立洞察力更有效的方法。最后，我仅仅在启动时记录一些运行参数，并清除错误，如：写入文件失败。我非常清楚地意识到这里的坑。
+
+#### 吞吐量
+我想要第一件要优化的是吞吐量。为了满足我自己的好奇心，我再[Twitter](https://twitter.com/peterbourgon/status/811985708017709056)上做了一个调查。我对集群中的每个节点日志吞吐量非常感兴趣。这个测试结果范围值很大，从1KBps到25MBps之间变化。5MB/sec/node对于80%~90%的方案是一个比较好的目标。让我们看看典型的测试用例。
+
+DigitalOcean磁盘显然可以达到250MBps的持续写入，在云服务中这是表现非常好的。在我自己的测试环境中，磁盘写入测试要少一些，它在150MBps上下浮动。如果我们系统设计得正确，那么150MBps就是我们的I/O性能瓶颈。因为我们每个节点的写速度控制在5MB/sec/node，则单个ingest节点能够处理写操作不阻塞的集群节点大小范围：150/5=30 ~ 250/5=50个节点。这个范围间的集群因子都是合理的。因为我们有3个ingest节点，所以写操作的速度是150MBps*3个节点=450MBps的聚合速度。
+
+#### 优化forwarding
+这个forwarder不过是netcat而已。基本地
+```golang
+    // client connection, forwarder就类似于下面的作用，传送数据
+    conn, _ := net.Dial("tcp", ingesterAddress)
+    s:=bufio.NewScanner(os.Stdin)
+    for s.Scan() {
+        fmt.Fprintf(conn, "%s\n", s.Text()) // 往tcp链路中向服务端发送终端产生的数据
+    }
+```
+
+Go's bufio.Scanner在这里非常形象；产生数据后，通过tcp链路传送数据。~~whatever limits I hit, they weren’t imposed by the scanner. ~~，(ps: 不明白)。我用一些低效率地方式来生成日志记录。我观察到CPU一路飘高，吞吐率远低于预期。性能分析暴露了两个问题：
+1. 我在热循环中使用了一个time.Ticker。每一个日志行带有一个ticker
+```golang
+hz:=time.Second / recordsPerSecond
+for range time.Tick(hz) {
+    // 传送一条日志记录
+}
+```
+这里有一个问题，如果你想要每秒记录1000条日志时，则每1ms阻塞一次是资源浪费的。我推荐采用批量传送日志记录，如下所示：
+```golang
+var (
+    recordsPerCycle = 1
+    timePerCycle  = time.Second / recordsPerSecond
+)
+for timePerCycle < 50*time.Millisecond {
+    recordsPerCycle *= 2
+    timePerCycle *= 2
+}
+for range time.Tick(timePerCycle) {
+    // 每次记录recordsPerCycle条日志记录
+}
+```
+
+2. 我利用随机数据在热循环中构建每一行日志，大量消耗CPU。在程序开始时，预先计算一大组固定的随机日志可以解决这个问题。通过这些变化，我可以很轻松地从每个进程推送大量的MBps，而且负载可以忽略不计。这个第二点翻译感觉很有问题, 原文如下：
+
+~Also, I was building each log line, of random data, within the hot loop, and burning lots of CPU in math.Rand to do it. Precomputing a large, fixed set of random log lines at program start solved that one. With those changes, I could easily push plenty of MBps second from each process with negligible load.~~
+
+我为每个forward节点创建了1-8个forwarders，共为8个ingest节点设置了8-64个forwarders。每个进程将每秒处理100-1000条日志记录，每条日志记录有100-8000个bytes，每秒生成能力高达512MB。非常高的性能。
+
+
