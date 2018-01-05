@@ -100,8 +100,10 @@ func main() {
 这个只是把oklog跑起来了，也不算吧，后续的工作
 
 * OKLog作者是跑在docker里的，如果不懂docker的，可以用我的oklog这个demo, 所以不支持go get github.com/oklog/oklog
+* OKLog架构上，我理解可能有些错误，还需要进一步学习和了解
 * 深入了解下各类节点的参数
 * 现在oklog的forward节点只是用了终端产生的日志，大多数时候我们是产生的日志文件，如果不想改造现有的日志系统，那需要做文件流的日志采集
 * 更深入的了解OKLog，这个OKLog有很多可以学习的知识
+
 
 ps: 共同学习、共同进步
