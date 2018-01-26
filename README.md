@@ -54,7 +54,7 @@ go build && go install // go build会报错，很多包还需要进行go get
 
 暂时去掉了条件语句：if len(existing) > 0 {}
 
-oklog ingeststore -store.segment-replication-factor 1 -cluster=tcp://10.6.1.101:7159   -api=tcp://10.6.1.101:7150 -ingest.fast=tcp://10.6.1.101:7151 -ingest.durable=tcp://10.6.1.101:7152 -ingest.bulk=tcp://10.6.1.101:715
+oklog ingeststore -store.segment-replication-factor 1 -cluster=tcp://10.6.1.101:7159   -api=tcp://10.6.1.101:7150 -ingest.fast=tcp://10.6.1.101:7151 -ingest.durable=tcp://10.6.1.101:7152 -ingest.bulk=tcp://10.6.1.101:7153
 ## store.segment-replication-factor 表示日志备份数量
 ## 还有其他参数，比如日志文件的切割维度：时间和大小, 有默认值1天和128M
 
@@ -72,7 +72,7 @@ oklog ingeststore -store.segment-replication-factor 1 -cluster=tcp://10.6.1.101:
 oklog query -store tcp://10.6.1.101:7150 -from 5m -q "lily order" 
 ## -store参数：查询某个指定节点的日志数据, 当ingeststore小集群数量等于日志的备份数量时，任何一个节点都可以查到想要的数据
 ## 这里我还有个疑问需要去研究下：当集群节点的数量大于日志的备份数量时，如果查询节点不能指定多个store节点的话，有可能日志生成，但是查不到
-## 日志查询UI：http://10.6.1:101:7X50/ui
+## 日志查询UI：http://10.6.1.101:7X50/ui
 ```
 
 ```golang
