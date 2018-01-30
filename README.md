@@ -1,6 +1,8 @@
 ## OK Log
 OK Log是一个分布式、且无协同的日志管理系统，它是由peterbourgon大牛设计的，我最近想找一个日志搜集系统，用于监控和报警。用了两年的heka，去年年底因为性能问题导致作者rafrombrc放弃了Go版项目
 
+**ps: 这个是简化版oklog，裁剪版本**
+
 我这两周准备整理和翻译OK Log相关文档，然后再动手部署并搭建个DEMO，如果好用，我再部署的测试环境中，后续持续更新....
 
 ## 集群使用手册
@@ -54,46 +56,25 @@ go build && go install // go build会报错，很多包还需要进行go get
 
 暂时去掉了条件语句：if len(existing) > 0 {}
 
-oklog ingeststore -store.segment-replication-factor 1 -cluster=tcp://10.6.1.101:7159   -api=tcp://10.6.1.101:7150 -ingest.fast=tcp://10.6.1.101:7151 -ingest.durable=tcp://10.6.1.101:7152 -ingest.bulk=tcp://10.6.1.101:7153
+[执行quickstart-separate.bash脚本, 启动forward和ingest集群]
+
 ## store.segment-replication-factor 表示日志备份数量
 ## 还有其他参数，比如日志文件的切割维度：时间和大小, 有默认值1天和128M
 
-oklog ingeststore -store.segment-replication-factor 1 -cluster=tcp://10.6.1.101:7259  -peer=10.6.1.101:7159  -api=tcp://10.6.1.101:7250 -ingest.fast=tcp://10.6.1.101:7251 -ingest.durable=tcp://10.6.1.101:7252 -ingest.bulk=tcp://10.6.1.101:7253
+日志数据：消息队列, forward采集数据:
+oklog forward -prefix="FREEGO_WORK" -mq=amqp://username:password@xx.xx.xx.xx:5672/xxx?heartbeat=15 -api="tcp://10.6.1.101:7650"  tcp://10.6.1.101:10011 tcp://10.6.1.101:10021 tcp://10.6.1.101:10031
 
-oklog ingeststore -store.segment-replication-factor 1 -cluster=tcp://10.6.1.101:7359  -peer=10.6.1.101:7159 -peer=10.6.1.101:7259   -api=tcp://10.6.1.101:7350 -ingest.fast=tcp://10.6.1.101:7351 -ingest.durable=tcp://10.6.1.101:7352 -ingest.bulk=tcp://10.6.1.101:7353
-
-日志数据来源main.go的demo, forward采集数据:
-./temp  | oklog forward -prefix="FREEGO_WORK"  tcp://10.6.1.101:7151 tcp://10.6.1.101:7251 tcp://10.6.1.101:7351
 ## prefix表示前缀，这个真的很好，不同项目可以把日志放在一起存储了
-## tcp://10.6.1.101:7X51 表示ingest集群服务节点, 也可以只指定一个
 ## 当ingeststore集群起来时，会生成小集群各自的data/ingest, data/store日志文件目录
 
 日志查询：
-oklog query -store tcp://10.6.1.101:7150 -from 5m -q "lily order" 
+oklog query -store tcp://10.6.1.101:200X0 -from 5m -q "lily order" 
+
+上面这个IP和端口指定的是store服务存储，如果N个store服务节点，N个备份，理论上每个节点上都是可以访问完整日志的
+
 ## -store参数：查询某个指定节点的日志数据, 当ingeststore小集群数量等于日志的备份数量时，任何一个节点都可以查到想要的数据
 ## 这里我还有个疑问需要去研究下：当集群节点的数量大于日志的备份数量时，如果查询节点不能指定多个store节点的话，有可能日志生成，但是查不到
-## 日志查询UI：http://10.6.1.101:7X50/ui
-```
-
-```golang
-package main
-
-import (
-    "fmt"
-    "time"
-)
-
-func main() {
-    fmt.Println("hello,world")
-    fmt.Println("vim-go")
-    for i := 0; i < 1000; i++ {
-        fmt.Printf("generate order: %d\n", i+1)
-        if i == 999 {
-            i = 0
-        }
-        time.Sleep(time.Second)
-    }
-}
+## 日志查询UI：http://10.6.1.101:200X0/ui
 ```
 
 ## 接下来的事情
