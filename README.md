@@ -86,6 +86,7 @@ oklog query -store tcp://10.6.1.101:200X0 -from 5m -q "lily order"
 ![demo](demo.jpg)
 
 ### prometheus监控数据展示
+![prometheus metrics](prometheus.jpg)
 
 ## 接下来的事情
 这个只是把oklog跑起来了，也不算吧，后续的工作
