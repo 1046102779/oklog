@@ -7,7 +7,7 @@ import (
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/hashicorp/go-sockaddr"
+	sockaddr "github.com/hashicorp/go-sockaddr"
 	"github.com/pkg/errors"
 )
 
