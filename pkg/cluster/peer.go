@@ -197,6 +197,8 @@ func (d *delegate) state() map[string]peerInfo {
 // the given byte size. This metadata is available in the Node structure.
 // Implements memberlist.Delegate.
 func (d *delegate) NodeMeta(limit int) []byte {
+	d.mtx.RLock()
+	defer d.mtx.RUnlock()
 	return []byte{} // no metadata
 }
 

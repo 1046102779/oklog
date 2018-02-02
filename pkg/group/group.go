@@ -1,4 +1,4 @@
-// Package group aliases github.com/1046102779/run.
+// Package group aliases github.com/oklog/run.
 package group
 
 import (
