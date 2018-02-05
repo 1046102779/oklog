@@ -29,7 +29,7 @@ oklog文件系统支持nop(空文件系统)、virtual(内存文件系统)、real
 通常采用real文件系统，作为后端存储
 
 ### 3. pkg/ingest
-文件名 | 参数(interface|struct|method) | 相关说明 
+文件名 | 参数(interface-struct-method) | 相关说明 
 ---|---|---
 log.go | Log interface | Log接口主要包括写segment，读segment，所有的段统计信息和关闭segment
 - | WriteSegment interface | io.Writer, Sync(同步到fs), 关闭和删除file
