@@ -3,7 +3,7 @@ package store
 import (
 	"testing"
 
-	"github.com/1046102779/ulid"
+	"github.com/oklog/ulid"
 )
 
 func TestOverlap(t *testing.T) {

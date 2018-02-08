@@ -93,6 +93,14 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ||Consume.commit方法| 调用Consume.resetVia方法，类型：commit
 ||Consume.fail方法| 调用Consume.resetVia方法，类型：failed
 ||Consume.resetVia方法| 通过指定具体类型：commit或者failed, 通过在gather阶段的pending存储，来遍历ingest和日志记录ID, 并通过http请求ingest节点进行提交或者回滚。多少条记录，就会有对应数量的goroutine并发, 然后清空Consume的各个相应元素值，比如：pending, active buffer等
+|event.go| EventReporter interface | 只有一个ReportEvent(event)方法, 目前用于store日志输出, 注意：Event struct构成：Debug, Op, File, Error, Warning, Msg, 这种结构可以作为以后的日志格式参考方式, 挺好的
+||LogReporter struct | ReportEvent方法实现了EventReporter接口, 用于终端日志输出，现在继承了go-kit/kit/log
+|log.go | Log interface| 该接口为store节点提供了日志段文件服务有：Create(创建store段文件), Query(搜索查询), Overlapping(获取.flushed连续数量最多的重叠段), Sequential(获取有序且连续段文件数量, 用于合并段文件), Trashable(把小于指定时间的所有段文件放入到回收站), Purgeable(把小于指定时间的所有.trashed段文件列表，全部删除), Stats(统计当前的active、pending、flushed和trashed段各个size)和Close(释放段)方法
+||WriteSegment interface| 继承了io.Writer interface, 并提供了Close, Delete方法
+||ReadSegment interface|继承了io.Reader interface, 并提供了Reset, Trash, Purge方法
+||TrashSegment interface| 提供了Purge方法
+||LogStats struct | 元素包括：ActiveSegments段文件数量, ActiveBytes段文件大小, FlushedSegments段文件数量, FlushedBytes段文件大小, ReadingSegments段文件数量和ReadingBytes段文件大小，TrashedSegments段文件数量和TrashedBytes段文件大小
+|overlap.go|overlap方法| 参数两组：一组边界a，一组与边界计算是否重合的组b, 返回a与b是否有重叠
 
 ### 重点方法方法：mergeRecordsToLog
 形参：Log, segmentTargetSize, []io.Reader

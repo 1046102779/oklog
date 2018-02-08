@@ -1,6 +1,8 @@
 ## OK Log
 OK Log是一个分布式、且无协同的日志管理系统，它是由peterbourgon大牛设计的，我最近想找一个日志搜集系统，用于监控和报警。用了两年的heka，去年年底因为性能问题导致作者rafrombrc放弃了Go版项目
 
+[oklog学习笔记](note.md)
+
 **ps: 这个是简化版oklog，裁剪版本. 把终端日志采集源，改为了RabbitMQ，也可以改为其他输入源**
 
 我这两周准备整理和翻译OK Log相关文档，然后再动手部署并搭建个DEMO，如果好用，我再部署的测试环境中，后续持续更新....
@@ -98,6 +100,5 @@ oklog query -store tcp://10.6.1.101:200X0 -from 5m -q "lily order"
 * 更深入的了解OKLog，这个OKLog有很多可以学习的知识
 
 
-[oklog学习笔记](note.md)
 
 ps: 共同学习、共同进步
