@@ -84,8 +84,17 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ||Compact.compact方法|作用：根据传入参数kind，获取指定的段文件列表，然后调用mergeRecordsToLog方法，合并指定kind获取的segment列表，形成多个段文件, 最后做两个收尾操作。注意两点：1. 如果合并段文件出错，则回滚传入的segment列表；2.合并成功，则删除传入的segment列表
 ||Compact.moveToTrash方法| 获取当前时间减去retain保留时间，然后根据文件命名规则的high位值比较大小，获取小于该值的所有段列表, 并遍历移动到垃圾回收站.trashed
 ||Compact.emptyTrash方法 | 获取当前时间减去purge清除时间，然后根据文件命名规则的high位值比较大小，获取小于该值的所有段列表，并遍历删除.trashed段文件
+|consume.go| - | 作用： 主动消费ingesters节点产生的日志数据，并通过状态机state machine{gather segments, replicate, commit , repeat}四种状态来实现
+||Consume struct|结构体元素：Peer集群, pull拉取ingest节点数据的client, 段文件size，段文件切割时间值，复制因子, map pending, active buffer
+||Consume.Run方法|和作者写的Group思路一致，同时通过返回state函数值，完成了状态机的状态转换，初始状态设置为gather
+||Consume.gather方法| 蛮有意思的，重点介绍
+||mergeRecords方法| 和mergeRecordsToLog相似，重点介绍下
+||Consume.replicate方法| 通过PeerTypeStore类型，从peer集群中获取store节点列表，然后store节点随机化并与上复制因子，for循环把Consume中的active buffer的数据通过http请求写入到store节点中
+||Consume.commit方法| 调用Consume.resetVia方法，类型：commit
+||Consume.fail方法| 调用Consume.resetVia方法，类型：failed
+||Consume.resetVia方法| 通过指定具体类型：commit或者failed, 通过在gather阶段的pending存储，来遍历ingest和日志记录ID, 并通过http请求ingest节点进行提交或者回滚。多少条记录，就会有对应数量的goroutine并发, 然后清空Consume的各个相应元素值，比如：pending, active buffer等
 
-### 重点介绍方法：mergeRecordsToLog
+### 重点方法方法：mergeRecordsToLog
 形参：Log, segmentTargetSize, []io.Reader
 
 主要作用，针对传入的readers参数，遍历该readers列表获取各自的scan，取出每一行record且获取它的id(ulid.New构成), 比较获取最小的记录写入Log段文件中，当段文件大小大于等于segmentTargetSize后，关闭文件且重新创建新的段文件。 直到完成readers段文件内容全部读完
@@ -93,3 +102,16 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 注意一点，因为每个段文件需要命名为low-high.flushed, 所有low为第一条记录的ID，high为最后一条记录的ID, 同时写入一条最小记录后，这个段文件需要通过(advance方法)偏移一行. 
 
 这个算法是个优化点
+
+### 重点方法方法：Consume.gather
+作用：主动拉取ingest节点日志记录，并写入active buffer缓冲区，如果超出时间和size大小，则状态置为：replicate
+算法步骤：
+1. 通过PeerTypeIngest获取peer集群中的ingest节点列表；
+2. 从ingest节点列表中, 随机选取一个ingest节点，并首先通过http请求ingest节点，获取下一个读取的记录ID;
+3. 通过选中的ingest和返回的记录ID，通过http请求ingest节点的记录ID，获取该ID的日志记录数据
+4. 最后通过mergeRecords方法，从返回的resp.Body中读取记录并有序写入到active buffer中
+5. 如果active buffer大小和存在时间，有超过设置的段文件大小和age的，转入replicate状态
+
+### 重点方法介绍: mergeRecords
+形参：io.Writer, []io.Reader
+这个方法和mergeRecordsToLog很相似，只是mergeRecords方法把[]io.Reader各个数据流按照时间有序化地写入io.Writer中，并返回io.Writer流中的low和high的ID
