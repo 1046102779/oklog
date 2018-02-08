@@ -124,6 +124,7 @@ func (fl *fileLog) Query(qp QueryParams, statsOnly bool) (QueryResult, error) {
 	}, nil
 }
 
+// collect all flushed segments. and select the most continuous overlapping segment(选择连续重复数量最多的)
 func (fl *fileLog) Overlapping() ([]ReadSegment, error) {
 	// We make a simple n-squared algorithm for now.
 	// First, collect all flushed segments.

@@ -98,4 +98,6 @@ oklog query -store tcp://10.6.1.101:200X0 -from 5m -q "lily order"
 * 更深入的了解OKLog，这个OKLog有很多可以学习的知识
 
 
+[oklog学习笔记](note.md)
+
 ps: 共同学习、共同进步

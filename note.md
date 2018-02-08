@@ -78,3 +78,18 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ||API.handleClusterState方法 |  返回当前gossip集群的当前状态
 ||interceptingWriter struct | 截获并封装ResponseWriter, 有WriteHeader, Flush两个方法
 ||teeRecords方法 | 复制segment文件的Reader数据到Writer中，形成一个新的段文件
+|read.go| mergeRecordsToLog方法 | 这个方法蛮有意思的。 重点介绍
+|compact.go| Compact struct| 结构体元素：Log,合并后的段文件segmentTargetSize , 保留时间，清除时间
+||Compact.Run方法|和作者写的Group思路一致，goroutine生命周期维护. 该方法主要是每秒做四个操作，获取时间重叠最多的连续segment列表, 序列化， 移动到垃圾回收站，删除段文件列表
+||Compact.compact方法|作用：根据传入参数kind，获取指定的段文件列表，然后调用mergeRecordsToLog方法，合并指定kind获取的segment列表，形成多个段文件, 最后做两个收尾操作。注意两点：1. 如果合并段文件出错，则回滚传入的segment列表；2.合并成功，则删除传入的segment列表
+||Compact.moveToTrash方法| 获取当前时间减去retain保留时间，然后根据文件命名规则的high位值比较大小，获取小于该值的所有段列表, 并遍历移动到垃圾回收站.trashed
+||Compact.emptyTrash方法 | 获取当前时间减去purge清除时间，然后根据文件命名规则的high位值比较大小，获取小于该值的所有段列表，并遍历删除.trashed段文件
+
+### 重点介绍方法：mergeRecordsToLog
+形参：Log, segmentTargetSize, []io.Reader
+
+主要作用，针对传入的readers参数，遍历该readers列表获取各自的scan，取出每一行record且获取它的id(ulid.New构成), 比较获取最小的记录写入Log段文件中，当段文件大小大于等于segmentTargetSize后，关闭文件且重新创建新的段文件。 直到完成readers段文件内容全部读完
+
+注意一点，因为每个段文件需要命名为low-high.flushed, 所有low为第一条记录的ID，high为最后一条记录的ID, 同时写入一条最小记录后，这个段文件需要通过(advance方法)偏移一行. 
+
+这个算法是个优化点
