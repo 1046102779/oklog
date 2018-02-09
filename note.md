@@ -125,7 +125,10 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ||queryRegistry.Close方法|关闭所有查询的chanmap通道
 ||queryRegistry.Match方法|流式查询入口，重点介绍
 ||readCloser struct| 元素有：io.Reader和io.Closer
-||newMultiReadCloser方法|
+||newMultiReadCloser方法| 封装[]io.ReadCloser，构成成一个io.ReadCloser
+||multiCloser []io.Closer | 遍历关闭Close()
+||multiCloseError []error| 实现了Error接口，把多个Error值通过`;`构成一个新的Error返回值string
+||scanLinesPreserveNewline方法| 作为scan.Split(func)数据流的分隔符, 分割比特流
 
 ### 重点方法介绍：mergeRecordsToLog
 形参：Log, segmentTargetSize, []io.Reader
