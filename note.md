@@ -101,6 +101,19 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ||TrashSegment interface| 提供了Purge方法
 ||LogStats struct | 元素包括：ActiveSegments段文件数量, ActiveBytes段文件大小, FlushedSegments段文件数量, FlushedBytes段文件大小, ReadingSegments段文件数量和ReadingBytes段文件大小，TrashedSegments段文件数量和TrashedBytes段文件大小
 |overlap.go|overlap方法| 参数两组：一组边界a，一组与边界计算是否重合的组b, 返回a与b是否有重叠
+|query.go| QueryParams struct| 结构体元素：(From, To)起始时间，Q 查询，Regex 是否为正则匹配
+||QueryParams.DecodeFrom方法 | 解析url请求参数，包括From、To、Q和Regex
+||ulidOrTime struct|结构体：ulid.ULID和time.Time, 它主要用来解析传入的From或者To参数，为ULID和time
+||ulidOrTime.Parse方法|解析时间字符串From和To参数, 其中支持的ULID的时间格式，和time.RFC3339Nano时间两种格式
+||QueryResult struct| 元素：QueryParams查询参数，NodesQueried查询的节点数, SegmentsQueried查询段文件数量, MaxDataSetSize总共查询的总大小size, ErrorCount错误段文件数量, Duration和Records返回的段io.Reader
+||QueryResult.EncodeTo方法|服务端封装QueryResult各个元素值，并输出ResponseWriter
+||QueryResult.DecodeFrom方法|客户端解析ResponseWriter，并存储到QueryResult中。`注意：这些QueryResult各个元素参数在http通信过程中都是存储在http.Header中，例如：X-Oklog-From, X-Oklog-Max-Data-Set-Size等`
+||QueryResult.Merge方法|合并两个QueryResult,  最后把各自的io.ReadCloser合并成有序的段文件buffer, 然后赋给QueryResult.Records. `这里有个蛮有意思的点：buffer并非io.ReadCloser，所以buffer不能直接赋值给QueryResult.Records, 需要提供一个io.Closer方法，所以io.NopCloser就实现了这一点`
+|query_registry.go|-|主要用来进行流式查询，也即stream查询方式，不超时
+|| queryRegistry struct| 元素包括：mutex, chanmap(多查询channel返回符合搜索结果的流式输出)
+|| queryRegistry.Register方法| 注册查询
+||queryRegistry.Close方法|关闭所有查询的chanmap通道
+||queryRegistry.Match方法|
 
 ### 重点方法方法：mergeRecordsToLog
 形参：Log, segmentTargetSize, []io.Reader
