@@ -79,6 +79,16 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ||interceptingWriter struct | 截获并封装ResponseWriter, 有WriteHeader, Flush两个方法
 ||teeRecords方法 | 复制segment文件的Reader数据到Writer中，形成一个新的段文件
 |read.go| mergeRecordsToLog方法 | 这个方法蛮有意思的。 重点介绍
+||mergeRecords方法| 重点介绍
+||newQueryReadCloser方法 | 把所有符合recordFilter函数值的段文件列表合并形成一个io.ReadCloser并输出, 也就是符合查询条件的返回结果流。重点介绍
+||mergeReadCloser struct| 用于多路归并io.ReadCloser, 应用场景是交叉segment. 其元素：[]io.Closer, []bufio.Scanner, []bool, records [][]byte, ,id [][]byte(其中records表示下一刻每个ReadSegment要读取的record，id对应record中的ULID)
+||mergeReadCloser.Read方法|作用: 读取mergeReadCloser.id[], 选择最小的id对应的record作为返回值.每次读取后，id所对应的readSegmeng移步一次。`注意点：mergeReadCloser实例并没有多路归并交叉记录, 而是在Read时进行去重操作`
+||mergeReadCloser.Close方法|把[]io.Readcloser列表逐一关闭
+||mergeReadCloser.advance方法| 输入指定索引index，并把对应的readSegment移步一次,更新mergeReadCloser.id[index]和records[index]
+||newMergeReadCloser方法| 构建一个mergeReadCloser实例，并把[]readSegment列表的第一个要读取的record和id写入到实例的records和ids中
+||batchSegments方法 |  对传入的有序段文件列表进行分组，具有交叉段的段文件分为一组，返回[][]segment
+||makeConcurrentFilteringReadClosers方法| 遍历[]readSegment列表，然后通过newConcurrentFilteringReadCloser方法获取每个segment匹配recordFilter函数值，返回累计的io.ReadCloser列表
+||newConcurrentFilteringReadCloser方法| 把ReadSegment和recordFilter, 通过for scan匹配，写入到io.ReadCloser
 |compact.go| Compact struct| 结构体元素：Log,合并后的段文件segmentTargetSize , 保留时间，清除时间
 ||Compact.Run方法|和作者写的Group思路一致，goroutine生命周期维护. 该方法主要是每秒做四个操作，获取时间重叠最多的连续segment列表, 序列化， 移动到垃圾回收站，删除段文件列表
 ||Compact.compact方法|作用：根据传入参数kind，获取指定的段文件列表，然后调用mergeRecordsToLog方法，合并指定kind获取的segment列表，形成多个段文件, 最后做两个收尾操作。注意两点：1. 如果合并段文件出错，则回滚传入的segment列表；2.合并成功，则删除传入的segment列表
@@ -113,9 +123,11 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 || queryRegistry struct| 元素包括：mutex, chanmap(多查询channel返回符合搜索结果的流式输出)
 || queryRegistry.Register方法| 注册查询
 ||queryRegistry.Close方法|关闭所有查询的chanmap通道
-||queryRegistry.Match方法|
+||queryRegistry.Match方法|流式查询入口，重点介绍
+||readCloser struct| 元素有：io.Reader和io.Closer
+||newMultiReadCloser方法|
 
-### 重点方法方法：mergeRecordsToLog
+### 重点方法介绍：mergeRecordsToLog
 形参：Log, segmentTargetSize, []io.Reader
 
 主要作用，针对传入的readers参数，遍历该readers列表获取各自的scan，取出每一行record且获取它的id(ulid.New构成), 比较获取最小的记录写入Log段文件中，当段文件大小大于等于segmentTargetSize后，关闭文件且重新创建新的段文件。 直到完成readers段文件内容全部读完
@@ -124,7 +136,7 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 
 这个算法是个优化点
 
-### 重点方法方法：Consume.gather
+### 重点方法介绍：Consume.gather
 作用：主动拉取ingest节点日志记录，并写入active buffer缓冲区，如果超出时间和size大小，则状态置为：replicate
 算法步骤：
 1. 通过PeerTypeIngest获取peer集群中的ingest节点列表；
@@ -136,3 +148,19 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ### 重点方法介绍: mergeRecords
 形参：io.Writer, []io.Reader
 这个方法和mergeRecordsToLog很相似，只是mergeRecords方法把[]io.Reader各个数据流按照时间有序化地写入io.Writer中，并返回io.Writer流中的low和high的ID
+
+### 重点方法介绍：queryRegistry.Match
+流式查询方法
+所有外部查询和内部的流式查询入口(不超时)，都是通过Match批量查询的. 在queryRegistry.Register方法里就已经把流式查询参数注入到recordFilter函数值中，最后通过把段文件流作为传入Match的参数，进行所有外部查询的遍历匹配, 最后通过channel流式输出
+
+### 重点方法介绍：newQueryReadCloser
+形参：filesystem, []readSegment, recordFilter, bufsz 
+返回：io.ReadCloser, 返回总字节数
+作用：把传入的[]readSegment列表和recordFilter进行匹配，然后合并成io.ReadCloser. 
+具体步骤： 
+1. 通过把[]readSegment进行批量分组，有交叉的分为一组。
+2. 遍历第一步获取的readSegment列表, 如果group元素个数为1，则遍历readSegment，并与recordFilter函数值比较, 并返回符合条件的数据流io.ReadCloser; 否则进入第三步
+3. 如果group元素个数大于1，则需要多路归并，因为有交叉记录, 通过mergeReadCloser struct实现多路归并, 返回io.ReaderCloser
+4. 最后通过newMultiReadCloser把[]io.ReadCloser把它们构建成一个io.ReadCloser
+
+注意：只要所有段文件形成了io.ReadCloser数据流，这进入段文件的所有数据，都能直接在query流式中直接快速返回，类似于吸附手臂上的吸血虫, 血液流动，吸血虫直接吸血
