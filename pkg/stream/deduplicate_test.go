@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/1046102779/ulid"
+	"github.com/oklog/ulid"
 )
 
 func TestDeduplicate(t *testing.T) {

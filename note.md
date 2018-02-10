@@ -130,6 +130,16 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ||multiCloseError []error| 实现了Error接口，把多个Error值通过`;`构成一个新的Error返回值string
 ||scanLinesPreserveNewline方法| 作为scan.Split(func)数据流的分隔符, 分割比特流
 
+### pkg/stream
+文件名 | 参数(interface-struct-method) | 相关说明 
+---|---|---
+|deduplicate.go| - | 关键文件，用于查询结果给client时的日志记录去重，尽量保证日志记录的无重复性和有序性
+||Deduplicate方法| 形参：输入流、去重窗口大小; 回参：去重后的输出流. 注意：这里输入流和输出流存在流速控制，如果输入速度大于输出速度，则内存会爆掉；策略：把窗口平均分成10等份，每1/10窗口则删除掉老的小于该1/10窗口时刻的所有时间节点。但是也存在问题，流速过快的话，如果某一个时间段9/10的窗口就能把内存吃到爆，则目前只能缩小时间窗口大小; 但是如果时间窗口过小，则BTree删除最老的1/10窗口节点时，可能下个时间重复的节点值会出现
+||dedupe struct|封装实现了BTree的insert、remove方法
+||type item []byte| 实现了BTree节点之间的大小比较方法, 通过record中的ULID比较大小
+||dedupe.insert方法|直接插入record
+||dedupe.remove方法|通过输入1/10的窗口时刻，获取ULID，然后在BTree中找出<=ULID的所有节点，然后逐一删除
+
 ### 重点方法介绍：mergeRecordsToLog
 形参：Log, segmentTargetSize, []io.Reader
 
