@@ -1,7 +1,6 @@
 package stream
 
 import (
-	"sync"
 	"time"
 
 	"github.com/google/btree"
@@ -42,9 +41,8 @@ func Deduplicate(in <-chan []byte, window time.Duration, ticker func(time.Durati
 }
 
 type dedupe struct {
-	mtx sync.Mutex
 	*btree.BTree
-	ulidRecordmap map[WrapULID][]byte // map[ulid]record
+	ulidRecordmap map[WrapULID][]byte // map[ulid]record && no race
 }
 
 func (d dedupe) insert(record []byte) {
@@ -54,9 +52,7 @@ func (d dedupe) insert(record []byte) {
 	var node ulid.ULID
 	node.UnmarshalText(record[:ulid.EncodedSize])
 	d.BTree.ReplaceOrInsert(WrapULID{node})
-	d.mtx.Lock()
 	d.ulidRecordmap[WrapULID{node}] = record
-	d.mtx.Unlock()
 }
 
 func (d dedupe) remove(olderThan time.Time, dst chan<- []byte) {
