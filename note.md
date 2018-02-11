@@ -139,7 +139,11 @@ api.go | ClusterPeer interface | 两个方法：1.获取指定类型的节点列
 ||type item []byte| 实现了BTree节点之间的大小比较方法, 通过record中的ULID比较大小
 ||dedupe.insert方法|直接插入record
 ||dedupe.remove方法|通过输入1/10的窗口时刻，获取ULID，然后在BTree中找出<=ULID的所有节点，然后逐一删除
-
+|stream.go| Execute方法| 主要用于每秒定时更新PeerTypeStore类型的store节点, 主要防止网络拓扑结构或者网络抖动引起的连接失效, 并建立store的http流式请求。把结果以channel sink的形式输送给上层。
+|| updateActive方法| 删除老的store拓扑节点列表，并通过cluster.PeerTypeStore获取最新的store节点列表并创建新的拓扑节点连接。同时把先前的context.Cancel取消掉
+||readUntilCanceled方法| 读取某个store连接上的数据流，并通过channel把数据输送到上层，如果这个连接中任意节点context关闭，则触发连接关闭. 注意：如果是读取流出错，则sleep.Second. 
+|| readOnce方法|  通过bufio.Scanner读取连接上的流数据，通过channel返回给上层
+||HTTPReadCloserFactory方法| 把传输的store地址，建立http流式请求
 ### 重点方法介绍：mergeRecordsToLog
 形参：Log, segmentTargetSize, []io.Reader
 
